@@ -1,0 +1,6 @@
+{
+  "name": "@deployhub/config",
+  "version": "1.0.0",
+  "private": true,
+  "main": "tsconfig.base.json"
+}

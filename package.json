@@ -1,0 +1,13 @@
+{
+  "name": "deployhub",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter \"*\" dev",
+    "build": "pnpm --filter \"*\" build",
+    "lint": "pnpm --filter \"*\" lint"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.5"
+  }
+}
