@@ -2,8 +2,17 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
-import { HealthCheckResponse, Deployment } from '@deployhub/shared';
-
+import cookieParser from 'cookie-parser';
+import { Server as SocketServer } from 'socket.io';
+import { initSocketManager } from './modules/sockets/socket.service.js';
+import { authrouter } from './modules/auth/auth.routes.js';
+import { githubRouter } from './modules/github/github.routes.js';
+import { connectMongo } from './lib/mongo.js';
+import { workflowRouter } from './modules/workflowSync/workflow.routes.js';
+import { ApolloServer } from '@apollo/server';
+import { expressMiddleware } from '@as-integrations/express4';
+import { metricsTypeDefs } from './modules/metrics/metrics.scheme.js';
+import { metricsResolver } from './modules/metrics/metrics.resolver.js';
 // Load environment variables
 dotenv.config();
 
@@ -12,12 +21,15 @@ const app = express();
 // Security Middleware
 app.use(helmet());
 app.use(express.json());
+app.use(cookieParser());
 
 // CORS configuration - only allow web frontend in development/production
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000'
-];
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000'
+  ];
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -31,62 +43,23 @@ app.use(cors({
   credentials: true
 }));
 
-// Port & Host configuration
-// SECURITY: Default to localhost/127.0.0.1 to avoid exposing the port externally during testing.
+connectMongo()
+// connect to MongoDB
+
+
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 8000;
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = process.env.HOST || '0.0.0.0';
 
-// In-memory data store for demonstration
-const deployments: Deployment[] = [
-  {
-    id: '1',
-    appName: 'nextjs-web-app',
-    status: 'deployed',
-    url: 'https://web.deployhub.local',
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: '2',
-    appName: 'express-api-service',
-    status: 'building',
-    createdAt: new Date().toISOString()
-  }
-];
+app.use('/api/auth', authrouter);
+app.use('/api/github', githubRouter);
+app.use('/api/workflow', workflowRouter);
 
-// Health Check Endpoint
-app.get('/api/health', (req, res) => {
-  const healthResponse: HealthCheckResponse = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  };
-  res.json(healthResponse);
+const apolloServer = new ApolloServer({
+  typeDefs: metricsTypeDefs,
+  resolvers: metricsResolver,
 });
-
-// Deployments Endpoints
-app.get('/api/deployments', (req, res) => {
-  res.json(deployments);
-});
-
-app.post('/api/deployments', (req, res) => {
-  const { appName } = req.body;
-  if (!appName || typeof appName !== 'string' || appName.trim() === '') {
-    res.status(400).json({ error: 'Valid appName is required' });
-    return;
-  }
-
-  // TODO(security): Implement CSRF token validation and session/auth checks here
-
-  const newDeployment: Deployment = {
-    id: (deployments.length + 1).toString(),
-    appName: appName.trim(),
-    status: 'idle',
-    createdAt: new Date().toISOString()
-  };
-
-  deployments.push(newDeployment);
-  res.status(201).json(newDeployment);
-});
+await apolloServer.start();
+app.use('/graphql', expressMiddleware(apolloServer));
 
 // Global Error Handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -99,5 +72,13 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 const server = app.listen(PORT, HOST, () => {
   console.log(`[API] Server listening securely on http://${HOST}:${PORT}`);
 });
+
+const io = new SocketServer(server, {
+  cors: {
+    origin: allowedOrigins,
+    credentials: true
+  }
+});
+initSocketManager(io);
 
 export default server;

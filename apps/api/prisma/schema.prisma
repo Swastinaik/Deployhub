@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectRole {
+  OWNER
+  MEMBER
+  VIEWER
+}
+
+enum ProjectVisibility {
+  PRIVATE
+  PUBLIC
+}
+
+model User {
+  id                String   @id @default(cuid())
+  githubId          String   @unique
+  username          String   @unique
+  email             String?  @unique
+  avatarUrl         String?
+  githubAccessToken String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  projects          ProjectMember[]
+  refreshTokens     RefreshToken[]
+}
+
+model Project {
+  id                String   @id @default(cuid())
+
+  name              String
+  githubRepoOwner   String
+  githubRepoName    String
+
+  githubRepoId      String   @unique
+
+  defaultBranch     String   @default("main")
+
+  visibility        ProjectVisibility @default(PRIVATE)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  members           ProjectMember[]
+
+  lastSyncedAt      DateTime?
+  latestRunId       String?
+  runSynced         Boolean?
+  lastSynced        Boolean   @default(false)
+
+  @@index([githubRepoOwner, githubRepoName])
+}
+
+model ProjectMember {
+  id          String      @id @default(cuid())
+
+  userId      String
+  projectId   String
+
+  role        ProjectRole @default(MEMBER)
+
+  createdAt   DateTime    @default(now())
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+}
+
+model RefreshToken {
+  id            String   @id @default(cuid())
+
+  tokenHash     String   @unique
+
+  userId        String
+
+  expiresAt     DateTime
+  revoked       Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

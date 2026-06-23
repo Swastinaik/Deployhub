@@ -15,4 +15,4 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app /app
 EXPOSE 8000
-CMD ["pnpm", "--filter", "api", "start"]
+CMD ["sh", "-c", "pnpm --filter api db:migrate && pnpm --filter api start"]
