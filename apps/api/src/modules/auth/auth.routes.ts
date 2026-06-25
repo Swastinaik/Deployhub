@@ -7,7 +7,7 @@ const router = Router();
 router.get("/github", asyncHandler(redirectToGithub));
 
 router.get(
-    "/github/callback",
+    "/callback",
     asyncHandler(githubCallback)
 );
 

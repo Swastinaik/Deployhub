@@ -39,7 +39,7 @@ export default function LoginPage() {
 
         {/* Brutalist GitHub Auth Button with slide-in hover */}
         <a
-          href={process.env.NEXT_PUBLIC_API_URL + "/auth/github"}
+          href={process.env.NEXT_PUBLIC_API_URL + "/api/auth/github"}
           className="github-auth-button animate-reveal-item delay-3"
           rel="noopener noreferrer"
           id="github_login_button"
