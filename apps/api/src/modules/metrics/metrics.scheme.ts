@@ -9,9 +9,6 @@ type ProjectMetrics {
 
   averageDuration: Float!
 
-  errorCount: Int!
-  warningCount: Int!
-
   topBranches: [BranchMetric!]!
 }
 

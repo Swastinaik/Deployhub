@@ -66,15 +66,6 @@ interface ProjectData {
   recentWorkflowRuns: WorkflowRun[];
 }
 
-interface LogLine {
-  _id?: string;
-  workflowRunId: number;
-  stepName: string;
-  level: "info" | "warning" | "error";
-  message: string;
-  timestamp: string;
-}
-
 interface ProjectMetrics {
   totalRuns: number;
   successfulRuns: number;
@@ -93,7 +84,7 @@ export default function ProjectDetailPage() {
   const [metrics, setMetrics] = useState<ProjectMetrics | null>(null);
   const [activeRuns, setActiveRuns] = useState<WorkflowRun[]>([]);
   const [selectedActiveRunId, setSelectedActiveRunId] = useState<number | null>(null);
-  const [activeLogs, setActiveLogs] = useState<Record<number, LogLine[]>>({});
+  const [liveJobs, setLiveJobs] = useState<Record<number, any[]>>({});
 
   const [loading, setLoading] = useState<boolean>(true);
   const [metricsLoading, setMetricsLoading] = useState<boolean>(true);
@@ -106,12 +97,12 @@ export default function ProjectDetailPage() {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
 
-  // Auto-scroll logs to bottom when new logs are rendered
+  // Auto-scroll logs to bottom when new logs/jobs are rendered
   useEffect(() => {
     if (logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [activeLogs, selectedActiveRunId]);
+  }, [liveJobs, selectedActiveRunId]);
 
   // Fetch project details and initial metrics on mount
   useEffect(() => {
@@ -135,7 +126,7 @@ export default function ProjectDetailPage() {
 
           // Sync initial active runs (running or queued)
           const active = result.data.recentWorkflowRuns.filter(
-            (run: WorkflowRun) => run.status === "in_progress" || run.status === "queued"
+            (run: WorkflowRun) => run.status === "in_progress" || run.status === "queued" || run.status === "requested"
           );
           setActiveRuns(active);
 
@@ -188,9 +179,12 @@ export default function ProjectDetailPage() {
     }
   }, [activeRuns, selectedActiveRunId]);
 
-  // Connect to WebSockets and join the project room
+  // Connect to WebSockets and join the repo room once project is loaded
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || !project) return;
+
+    const repoId = project.repoResponse?.id || (project as any).github_repo_id || Number((project as any).githubRepoId);
+    if (!repoId) return;
 
     const socket = io(process.env.NEXT_PUBLIC_API_URL || "", {
       withCredentials: true,
@@ -200,83 +194,111 @@ export default function ProjectDetailPage() {
 
     socket.on("connect", () => {
       setSocketConnected(true);
-      socket.emit("join_project", projectId);
-
-      // Trigger workflow sync/watching in the backend
-      authFetch("/api/workflow", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ projectId }),
-      }).catch((err) => {
-        console.error("[ProjectDetail] Failed to trigger watching service:", err);
-      });
+      socket.emit("join_repo", repoId);
+      console.log(`[Socket] Connected and joined repo room: repo_room_${repoId}`);
     });
 
     socket.on("disconnect", () => {
       setSocketConnected(false);
     });
 
-    // Listen for workflow run updates
-    socket.on("workflow_synced", (workflow: WorkflowRun) => {
-      // 1. Maintain active runs lifecycle
-      setActiveRuns((prevActive) => {
-        const isActive = workflow.status === "in_progress" || workflow.status === "queued";
-        const exists = prevActive.some((r) => r.githubRunId === workflow.githubRunId);
+    // Listen for live build framework updates
+    socket.on("build_framework_update", (workflow: any) => {
+      console.log("[Socket] Received build_framework_update:", workflow);
+      
+      const isActive = workflow.status === "in_progress" || workflow.status === "queued" || workflow.status === "requested";
 
-        if (isActive) {
+      if (isActive) {
+        setActiveRuns((prevActive) => {
+          const exists = prevActive.some((r) => r.githubRunId === workflow.runId);
+          const mappedRun: WorkflowRun = {
+            githubRunId: workflow.runId,
+            workflowName: workflow.workflowName || "Workflow",
+            branch: workflow.branch || "main",
+            commitSha: workflow.commitSha || "",
+            commitMessage: workflow.commitMessage || "",
+            actor: workflow.actor || "",
+            startedAt: workflow.startedAt || workflow.updatedAt || new Date().toISOString(),
+            status: workflow.status,
+            conclusion: workflow.conclusion || undefined,
+            durationSeconds: 0
+          };
           if (exists) {
-            return prevActive.map((r) => (r.githubRunId === workflow.githubRunId ? workflow : r));
+            return prevActive.map((r) => (r.githubRunId === workflow.runId ? {
+              ...r,
+              status: workflow.status,
+              conclusion: workflow.conclusion || undefined
+            } : r));
           } else {
-            return [...prevActive, workflow];
+            return [...prevActive, mappedRun];
           }
-        } else {
-          return prevActive.filter((r) => r.githubRunId !== workflow.githubRunId);
-        }
-      });
+        });
+      } else {
+        // If completed, remove from activeRuns
+        setActiveRuns((prevActive) => prevActive.filter((r) => r.githubRunId !== workflow.runId));
 
-      // 2. Sync project recent run list
-      setProject((prev) => {
-        if (!prev) return null;
-        const exists = prev.recentWorkflowRuns.some((r) => r.githubRunId === workflow.githubRunId);
-        let updatedRuns = [...prev.recentWorkflowRuns];
+        // Update recent runs list
+        setProject((prev) => {
+          if (!prev) return null;
+          const exists = prev.recentWorkflowRuns.some((r) => r.githubRunId === workflow.runId);
+          const mappedRun: WorkflowRun = {
+            githubRunId: workflow.runId,
+            workflowName: workflow.workflowName || "Workflow",
+            branch: workflow.branch || "main",
+            commitSha: workflow.commitSha || "",
+            commitMessage: workflow.commitMessage || "",
+            actor: workflow.actor || "",
+            startedAt: workflow.startedAt || workflow.updatedAt || new Date().toISOString(),
+            status: workflow.status,
+            conclusion: workflow.conclusion || undefined,
+            durationSeconds: workflow.duration || 0
+          };
+          let updatedRuns = [...prev.recentWorkflowRuns];
+          if (exists) {
+            updatedRuns = updatedRuns.map((r) => (r.githubRunId === workflow.runId ? mappedRun : r));
+          } else {
+            updatedRuns.unshift(mappedRun);
+          }
+          return {
+            ...prev,
+            recentWorkflowRuns: updatedRuns.slice(0, 5),
+          };
+        });
+      }
+    });
+
+    // Listen for live job updates
+    socket.on("build_job_update", (jobData: any) => {
+      console.log("[Socket] Received build_job_update:", jobData);
+      
+      setLiveJobs((prev) => {
+        const runId = jobData.runId;
+        const currentJobs = prev[runId] || [];
+        const exists = currentJobs.some((j) => j.jobId === jobData.jobId);
+        
+        let updatedJobs;
         if (exists) {
-          updatedRuns = updatedRuns.map((r) => (r.githubRunId === workflow.githubRunId ? workflow : r));
+          updatedJobs = currentJobs.map((j) => (j.jobId === jobData.jobId ? jobData : j));
         } else {
-          updatedRuns.unshift(workflow);
+          updatedJobs = [...currentJobs, jobData];
         }
+        
         return {
           ...prev,
-          recentWorkflowRuns: updatedRuns.slice(0, 5),
+          [runId]: updatedJobs
         };
       });
     });
 
-    // Listen for logs
-    socket.on("workflow_logs", (newLogs: LogLine[]) => {
-      setActiveLogs((prev) => {
-        const next = { ...prev };
-        for (const line of newLogs) {
-          const runId = line.workflowRunId;
-          if (!next[runId]) {
-            next[runId] = [];
-          }
-          next[runId] = [...next[runId], line];
-        }
-        return next;
-      });
-    });
-
     return () => {
-      socket.emit("leave_project", projectId);
+      socket.emit("leave_repo", repoId);
       socket.off("connect");
       socket.off("disconnect");
-      socket.off("workflow_synced");
-      socket.off("workflow_logs");
+      socket.off("build_framework_update");
+      socket.off("build_job_update");
       socket.disconnect();
     };
-  }, [projectId]);
+  }, [projectId, project]);
 
   // Live timer tick for active builds
   useEffect(() => {
@@ -291,15 +313,6 @@ export default function ProjectDetailPage() {
   }, [activeRuns]);
 
   /* ── Formatters ── */
-  const formatTime = (dateStr: string) => {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    } catch {
-      return dateStr;
-    }
-  };
-
   const formatDate = (dateStr: string) => {
     try {
       const d = new Date(dateStr);
@@ -322,6 +335,57 @@ export default function ProjectDetailPage() {
       return formatDuration(elapsed);
     }
     return formatDuration(run.durationSeconds);
+  };
+
+  const renderStatusIndicator = (status: string, conclusion?: string | null) => {
+    const isRunning = status === "in_progress" || status === "running";
+    const isQueued = status === "queued" || status === "requested" || status === "pending";
+
+    if (isQueued) {
+      return (
+        <span className="status-badge queued" style={{ color: "var(--accent-brass)", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+          <span className="dot" style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--accent-brass)" }} />
+          QUEUED
+        </span>
+      );
+    }
+
+    if (isRunning) {
+      return (
+        <span className="status-badge running" style={{ color: "var(--accent-brass)", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+          <span className="pulse-dot" style={{ background: "var(--accent-brass)" }} />
+          IN_PROGRESS
+        </span>
+      );
+    }
+
+    if (status === "completed") {
+      if (conclusion === "success") {
+        return (
+          <span className="status-badge success" style={{ color: "#2ECC71", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+            <span>✓</span> SUCCESS
+          </span>
+        );
+      }
+      if (conclusion === "failure") {
+        return (
+          <span className="status-badge failure" style={{ color: "var(--accent-vermillion)", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+            <span>✕</span> FAILURE
+          </span>
+        );
+      }
+      return (
+        <span className="status-badge neutral" style={{ color: "var(--text-secondary)", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+          <span>⊘</span> {conclusion?.toUpperCase() || "COMPLETED"}
+        </span>
+      );
+    }
+
+    return (
+      <span className="status-badge neutral" style={{ color: "var(--text-secondary)" }}>
+        {status.toUpperCase()}
+      </span>
+    );
   };
 
   /* ── Skeleton Loaders ── */
@@ -393,7 +457,6 @@ export default function ProjectDetailPage() {
 
   const recentRuns = project?.recentWorkflowRuns || [];
   const selectedActiveRun = activeRuns.find((r) => r.githubRunId === selectedActiveRunId);
-  const displayedLogs = selectedActiveRunId !== null ? activeLogs[selectedActiveRunId] || [] : [];
 
   return (
     <main className="dashboard-main">
@@ -530,7 +593,7 @@ export default function ProjectDetailPage() {
           )}
         </div>
 
-        {/* ── Active Builds & Live Log Split Section (50%/50%) ── */}
+        {/* ── Active Builds & Live Job Split Section (50%/50%) ── */}
         <div className="active-telemetry-grid">
           {/* Active Builds Selection List */}
           <div className="portal-card telemetry-card">
@@ -597,12 +660,13 @@ export default function ProjectDetailPage() {
             )}
           </div>
 
-          {/* Selected Active Build Live Console Stream */}
+          {/* Selected Active Build Live Jobs and Steps */}
           <div className="portal-card telemetry-card">
-            <div className="terminal-header">
+            <div className="terminal-header" style={{ marginBottom: "1rem" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                <h3 className="terminal-title">
-                  [LIVE_LOGS] {selectedActiveRun ? `(Run #${selectedActiveRun.githubRunId})` : ""}
+                <h3 className="terminal-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span>[LIVE_JOBS_AND_STEPS]</span>
+                  {selectedActiveRun ? `(Run #${selectedActiveRun.githubRunId})` : ""}
                 </h3>
                 {selectedActiveRun && (
                   <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", display: "flex", gap: "0.75rem" }}>
@@ -617,7 +681,7 @@ export default function ProjectDetailPage() {
               </div>
             </div>
 
-            <div className="terminal-window" style={{ height: "450px" }}>
+            <div className="terminal-window" style={{ height: "450px", overflowY: "auto", padding: "1.5rem" }}>
               {activeRuns.length === 0 ? (
                 <div className="terminal-empty">
                   <span className="terminal-cursor">&gt;_</span>
@@ -626,26 +690,39 @@ export default function ProjectDetailPage() {
               ) : !selectedActiveRunId ? (
                 <div className="terminal-empty">
                   <span className="terminal-cursor">&gt;_</span>
-                  <span>Select an active build to view console stream</span>
+                  <span>Select an active build to view jobs & steps progress</span>
                 </div>
-              ) : displayedLogs.length === 0 ? (
-                <div className="terminal-empty">
-                  <span className="terminal-cursor">&gt;_</span>
-                  <span>No logs captured for this active run yet</span>
+              ) : !liveJobs[selectedActiveRunId] || liveJobs[selectedActiveRunId].length === 0 ? (
+                <div className="terminal-empty" style={{ flexDirection: "column", gap: "1rem" }}>
+                  <div className="spinner" style={{ width: "24px", height: "24px" }} />
+                  <span>Waiting for live job status from GitHub...</span>
                 </div>
               ) : (
-                displayedLogs.map((line, idx) => (
-                  <div key={line._id || idx} className="log-line animate-reveal-item">
-                    <span className="log-timestamp">[{formatTime(line.timestamp)}]</span>
-                    <span className={`log-badge-level ${line.level.toLowerCase()}`}>
-                      {line.level.toUpperCase()}
-                    </span>
-                    {line.stepName && <span className="log-badge-step">[{line.stepName}]</span>}
-                    <span className={`log-message ${line.level.toLowerCase()}`}>
-                      {line.message}
-                    </span>
-                  </div>
-                ))
+                <div className="jobs-list" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                  {liveJobs[selectedActiveRunId].map((job: any) => (
+                    <div key={job.jobId} className="job-node" style={{ display: "flex", flexDirection: "column", gap: "0.75rem", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-medium)", borderRadius: "6px", padding: "1rem" }}>
+                      <div className="job-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: "0.5rem" }}>
+                        <span style={{ fontWeight: "600", fontSize: "0.95rem", color: "var(--text-primary)" }}>
+                          🛠️ {job.jobName}
+                        </span>
+                        {renderStatusIndicator(job.status, job.conclusion)}
+                      </div>
+
+                      {job.steps && job.steps.length > 0 && (
+                        <div className="steps-tree" style={{ display: "flex", flexDirection: "column", gap: "0.5rem", paddingLeft: "1.25rem", borderLeft: "2px solid rgba(255,255,255,0.05)" }}>
+                          {job.steps.map((step: any) => (
+                            <div key={step.number} className="step-node" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.85rem" }}>
+                              <span style={{ color: "var(--text-secondary)" }}>
+                                {step.number}. {step.name}
+                              </span>
+                              {renderStatusIndicator(step.status, step.conclusion)}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
               <div ref={logsEndRef} />
             </div>
@@ -680,7 +757,7 @@ export default function ProjectDetailPage() {
                     const isSuccess = run.conclusion === "success";
                     const isFailure = run.conclusion === "failure";
                     const isCancelled = run.conclusion === "cancelled";
-                    const isRunning = run.status === "in_progress" || run.status === "queued";
+                    const isRunning = run.status === "in_progress" || run.status === "queued" || run.status === "requested";
 
                     let badgeClass = "badge-neutral";
                     if (isSuccess) badgeClass = "badge-success";

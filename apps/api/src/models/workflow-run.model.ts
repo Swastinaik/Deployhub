@@ -36,19 +36,10 @@ const workflowRunSchema = new Schema(
             required: true,
         },
 
-        lastLogLineFetched: {
-            type: Number,
-            default: 0
-        },
-
         jobLogOffsets: {
             type: Map,
             of: Number,
             default: {}
-        },
-
-        lastLogSyncAt: {
-            type: Date
         },
 
         conclusion: {
@@ -57,6 +48,7 @@ const workflowRunSchema = new Schema(
                 "success",
                 "failure",
                 "cancelled",
+                "in_progress",
                 "skipped",
                 null,
             ],
@@ -81,6 +73,8 @@ const workflowRunSchema = new Schema(
         completedAt: Date,
 
         durationSeconds: Number,
+
+        duration: Number,
     },
     {
         timestamps: true,

@@ -1,14 +1,14 @@
-"use client"
+"use client";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
 import authFetch from "@/app/lib/authFetch";
 
-
 function Sidebar() {
     const router = useRouter();
     const pathname = usePathname();
     const [username, setUsername] = useState<string>("User");
+    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
     // Derive active tab from pathname
     const activeTab =
@@ -18,26 +18,26 @@ function Sidebar() {
         "repositories";
 
     useEffect(() => {
-        const fetchUsername = async () => {
+        const fetchUserProfile = async () => {
             try {
-                const response = await authFetch("/api/github/repos");
+                const response = await authFetch("/api/auth/me");
                 if (response.ok) {
                     const result = await response.json();
-                    if (result.status === "success" && Array.isArray(result.data) && result.data.length > 0) {
-                        setUsername(result.data[0].owner.login);
+                    if (result.status === "success" && result.data) {
+                        setUsername(result.data.username || "User");
+                        setAvatarUrl(result.data.avatarUrl || null);
                     }
                 }
             } catch (err) {
-                console.error("[DashboardLayout] Fetch username failed:", err);
+                console.error("[DashboardLayout] Fetch user profile failed:", err);
             }
         };
-        fetchUsername();
+        fetchUserProfile();
     }, []);
 
     const handleLogout = useCallback(() => {
         window.location.href = "/login";
     }, []);
-
 
     return (
         <aside className="dashboard-sidebar">
@@ -80,8 +80,12 @@ function Sidebar() {
 
             <div className="sidebar-footer">
                 <div className="user-profile">
-                    <div className="avatar">
-                        {username.charAt(0).toUpperCase()}
+                    <div className="avatar" style={{ overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {avatarUrl ? (
+                            <img src={avatarUrl} alt={username} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                            username.charAt(0).toUpperCase()
+                        )}
                     </div>
                     <div className="user-info">
                         <span className="username">{username}</span>
@@ -97,4 +101,4 @@ function Sidebar() {
     );
 }
 
-export default Sidebar
+export default Sidebar;

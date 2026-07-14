@@ -7,6 +7,10 @@ import { Server as SocketServer } from 'socket.io';
 import { initSocketManager } from './modules/sockets/socket.service.js';
 import { authrouter } from './modules/auth/auth.routes.js';
 import { githubRouter } from './modules/github/github.routes.js';
+import { githubUpdatedRouter } from './modules/github_updated/github.routes.js';
+import { requireAuth } from './modules/auth/auth.middleware.js';
+import { getUserRepositoriesFromDb } from './modules/github_updated/github.controllers.js';
+import { asyncHandler } from './lib/asyncHandler.js';
 import { connectMongo } from './lib/mongo.js';
 import { workflowRouter } from './modules/workflowSync/workflow.routes.js';
 import { ApolloServer } from '@apollo/server';
@@ -45,6 +49,8 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 8000;
 const HOST = process.env.HOST || '0.0.0.0';
 app.use('/api/auth', authrouter);
 app.use('/api/github', githubRouter);
+app.use('/api/github', githubUpdatedRouter);
+app.use('/api/user/repositories', requireAuth, asyncHandler(getUserRepositoriesFromDb));
 app.use('/api/workflow', workflowRouter);
 const apolloServer = new ApolloServer({
     typeDefs: metricsTypeDefs,

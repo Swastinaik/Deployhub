@@ -22,6 +22,18 @@ export class SocketManager {
                 console.log(`socket ${socket.id} left project room: ${projectId}`);
             });
 
+            socket.on("join_repo", (repoId: string | number) => {
+                const roomName = `repo_room_${repoId}`;
+                socket.join(roomName);
+                console.log(`socket ${socket.id} joined repo room: ${roomName}`);
+            });
+
+            socket.on("leave_repo", (repoId: string | number) => {
+                const roomName = `repo_room_${repoId}`;
+                socket.leave(roomName);
+                console.log(`socket ${socket.id} left repo room: ${roomName}`);
+            });
+
             socket.on("disconnect", () => {
                 console.log("user disconnected", socket.id);
             });
@@ -34,6 +46,18 @@ export class SocketManager {
 
     async broadcastWorkflowLogs(projectId: string, log: LogType[]) {
         this.io.to(projectId).emit("workflow_logs", log);
+    }
+
+    broadcastWorkflowEvent(repoId: string | number, data: any) {
+        const roomName = `repo_room_${repoId}`;
+        this.io.to(roomName).emit("build_framework_update", data);
+        console.log(`[SocketManager] Broadcasted build_framework_update to ${roomName}`);
+    }
+
+    broadcastJobEvent(repoId: string | number, data: any) {
+        const roomName = `repo_room_${repoId}`;
+        this.io.to(roomName).emit("build_job_update", data);
+        console.log(`[SocketManager] Broadcasted build_job_update to ${roomName}`);
     }
 
     getRoomSize(roomName: string) {

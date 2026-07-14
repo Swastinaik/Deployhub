@@ -1,5 +1,5 @@
 import { WorkflowRunModel } from "../../models/workflow-run.model.js";
-import { BuildLogModel } from "../../models/build-log.model.js";
+
 
 // TODO(security): Ensure authentication and authorization checks (verifying that the user
 // requesting metrics has access to the specified projectId) are performed at the resolver/controller level.
@@ -92,19 +92,7 @@ export class MetricsService {
       const workflowRuns = await WorkflowRunModel.find({ projectId }, "githubRunId");
       const workflowIds = workflowRuns.map(run => run.githubRunId);
 
-      const errors = await BuildLogModel.countDocuments({
-         workflowRunId: {
-            $in: workflowIds
-         },
-         level: "error"
-      });
 
-      const warnings = await BuildLogModel.countDocuments({
-         workflowRunId: {
-            $in: workflowIds
-         },
-         level: "warning"
-      });
 
       return {
          totalRuns,
@@ -115,9 +103,7 @@ export class MetricsService {
          successRate,
          failureRate,
          averageDuration,
-         topBranches,
-         errors,
-         warnings
+         topBranches
       };
    }
 }

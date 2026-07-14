@@ -1,18 +1,30 @@
 import { Router } from "express";
-import { getUserRepositories, saveRepositoryAsProject, getRepositoryDetails, getRepositoryDetailById, getUserProjects, getWorkflowRunLogs } from "./github.controller.js";
+import { verifyGitHubSignature } from "./github.services.js";
+import {
+  handleGithubWebhook,
+  verifyInstallation,
+  getUserRepositoriesFromDb,
+  getRepositoryDetailById,
+  getWorkflowRunJobs,
+} from "./github.controllers.js";
 import { requireAuth } from "../auth/auth.middleware.js";
 import { asyncHandler } from "../../lib/asyncHandler.js";
 
 const router = Router();
 
-router.get("/repos", requireAuth, asyncHandler(getUserRepositories));
-router.get("/repos/:owner/:repo", requireAuth, asyncHandler(getRepositoryDetails));
-router.post("/projects", requireAuth, asyncHandler(saveRepositoryAsProject));
-router.get("/projects", requireAuth, asyncHandler(getUserProjects));
+// GitHub App Webhook receiver endpoint
+router.post("/webhook", verifyGitHubSignature, asyncHandler(handleGithubWebhook));
+
+// Verify installation sync status
+router.get("/verify-installation", requireAuth, asyncHandler(verifyInstallation));
+
+// Fetch all projects for the user
+router.get("/projects", requireAuth, asyncHandler(getUserRepositoriesFromDb));
+
+// Fetch repository details and sync workflows
 router.get("/projects/:projectId", requireAuth, asyncHandler(getRepositoryDetailById));
-router.get("/projects/:projectId/runs/:runId/logs", requireAuth, asyncHandler(getWorkflowRunLogs));
 
-export { router as githubRouter };
+// Fetch jobs and steps for a specific workflow run
+router.get("/projects/:projectId/runs/:runId/jobs", requireAuth, asyncHandler(getWorkflowRunJobs));
 
-
-
+export { router as githubUpdatedRouter };

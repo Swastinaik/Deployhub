@@ -137,3 +137,36 @@ export async function refreshToken(req: Request, res: Response) {
         return res.status(401).json({ message: "Invalid or expired refresh token" });
     }
 }
+
+export async function getCurrentUser(req: Request, res: Response): Promise<Response> {
+  const token = req.cookies.refresh_token;
+
+  if (!token) {
+    return res.status(401).json({ message: "No refresh token" });
+  }
+
+  try {
+    const payload = jwt.verify(
+      token,
+      process.env.JWT_REFRESH_SECRET!
+    ) as { userId: string };
+
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        email: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(401).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({ status: "success", data: user });
+  } catch (err: any) {
+    return res.status(401).json({ message: "Invalid or expired session" });
+  }
+}

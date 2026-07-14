@@ -19,8 +19,6 @@ export const metricsResolver = {
             activeRuns: data.activeRuns,
             successRate: data.successRate,
             averageDuration: data.averageDuration,
-            errorCount: data.errors,
-            warningCount: data.warnings,
             topBranches: data.topBranches.map(tb => ({
                branch: tb.name,
                count: tb.count
