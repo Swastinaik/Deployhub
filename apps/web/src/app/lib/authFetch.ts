@@ -2,7 +2,7 @@
 
 export function getApiUrl(path: string) {
     if (typeof window !== "undefined") {
-        return `/backend${path}`;
+        return path;
     }
 
     const baseUrl =

@@ -7,5 +7,9 @@
   },
   "include": [
     "src/**/*"
+  ],
+  "exclude": [
+    "src/modules/github/**/*",
+    "src/modules/workflowSync/**/*"
   ]
 }
