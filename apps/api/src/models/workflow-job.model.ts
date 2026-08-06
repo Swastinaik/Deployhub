@@ -41,6 +41,10 @@ const workflowJobSchema = new Schema(
             type: [Schema.Types.Mixed],
             default: [],
         },
+        errorLogs: {
+            type: Schema.Types.Mixed,
+            default: undefined,
+        },
     },
     {
         timestamps: true,

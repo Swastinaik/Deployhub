@@ -25,6 +25,7 @@ interface WorkflowJob {
   startedAt?: string;
   completedAt?: string;
   steps: WorkflowStep[];
+  errorLogs?: Record<string, string[]>;
 }
 
 interface WorkflowRun {
@@ -375,31 +376,53 @@ export default function WorkflowRunLogsPage() {
                           >
                             {job.steps.map((step) => {
                               const stepDuration = calculateDuration(step.startedAt, step.completedAt);
+                              const isFailed = step.conclusion === "failure";
 
                               return (
-                                <div
-                                  key={step.number}
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    fontSize: "0.9rem",
-                                    padding: "0.4rem 0",
-                                  }}
-                                >
-                                  <span style={{ color: "var(--text-secondary)", display: "flex", gap: "0.5rem" }}>
-                                    <span style={{ color: "var(--accent-vermillion)", opacity: "0.7" }}>{step.number}.</span>
-                                    {step.name}
-                                  </span>
+                                <div key={step.number} style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      fontSize: "0.9rem",
+                                      padding: "0.4rem 0",
+                                      width: "100%",
+                                    }}
+                                  >
+                                    <span style={{ color: "var(--text-secondary)", display: "flex", gap: "0.5rem" }}>
+                                      <span style={{ color: "var(--accent-vermillion)", opacity: "0.7" }}>{step.number}.</span>
+                                      {step.name}
+                                    </span>
 
-                                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                                    {stepDuration && (
-                                      <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
-                                        {stepDuration}
-                                      </span>
-                                    )}
-                                    {renderStatusIndicator(step.status, step.conclusion)}
+                                    <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                                      {stepDuration && (
+                                        <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
+                                          {stepDuration}
+                                        </span>
+                                      )}
+                                      {renderStatusIndicator(step.status, step.conclusion)}
+                                    </div>
                                   </div>
+
+                                  {isFailed && job.errorLogs && job.errorLogs[step.name] && job.errorLogs[step.name].length > 0 && (
+                                    <div
+                                      style={{
+                                        margin: "0.5rem 0 0.5rem 1.5rem",
+                                        padding: "0.75rem",
+                                        background: "rgba(231, 76, 60, 0.05)",
+                                        borderLeft: "3px solid #E74C3C",
+                                        borderRadius: "4px",
+                                        fontFamily: "var(--font-mono)",
+                                        fontSize: "0.8rem",
+                                        color: "#E74C3C",
+                                        whiteSpace: "pre-wrap",
+                                        overflowX: "auto",
+                                      }}
+                                    >
+                                      {job.errorLogs[step.name].join("\n")}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}

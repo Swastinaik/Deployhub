@@ -5,6 +5,8 @@ import { getSocketManager } from "../sockets/socket.service.js";
 import { WorkflowRunModel } from "../../models/workflow-run.model.js";
 import { WorkflowJobModel } from "../../models/workflow-job.model.js";
 import { mapStatus, mapConclusion } from "../../lib/utils.js";
+import { getOctokitForUser } from "../auth/auth.utils.js";
+
 
 
 // Verify GitHub signatures for incoming webhooks
@@ -245,6 +247,85 @@ export async function handleWorkflowRunEvent(payload: any): Promise<void> {
 }
 
 // 4. Process Workflow Job Event (Telemetries & Sockets)
+export async function fetchAndExtractFailedLogs(
+  octokit: any,
+  owner: string,
+  repo: string,
+  jobId: number | string,
+  failedStepNames: string[]
+): Promise<Record<string, string[]> | null> {
+  try {
+    const response = await octokit.request(
+      "GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
+      {
+        owner,
+        repo,
+        job_id: Number(jobId),
+      }
+    );
+
+    let fullLogText = "";
+    if (typeof response.data === "string") {
+      fullLogText = response.data;
+    } else if (response.data instanceof ArrayBuffer) {
+      const decoder = new TextDecoder("utf-8");
+      fullLogText = decoder.decode(response.data);
+    } else if (Buffer.isBuffer(response.data)) {
+      fullLogText = response.data.toString("utf-8");
+    } else if (response.data) {
+      fullLogText = JSON.stringify(response.data);
+    }
+
+    if (!fullLogText) {
+      return null;
+    }
+
+    const lines = fullLogText.split("\n");
+    const result: Record<string, string[]> = {};
+
+    for (const stepName of failedStepNames) {
+      // Try to parse logs inside groups first: ##[group]Step Name ... ##[endgroup]
+      let groupLogs: string[] = [];
+      let inGroup = false;
+
+      for (const line of lines) {
+        if (line.includes("##[group]")) {
+          const groupTitle = line.split("##[group]")[1]?.trim().toLowerCase() || "";
+          if (groupTitle.includes(stepName.toLowerCase()) || stepName.toLowerCase().includes(groupTitle)) {
+            inGroup = true;
+          } else {
+            inGroup = false;
+          }
+          continue;
+        }
+        if (line.includes("##[endgroup]")) {
+          inGroup = false;
+          continue;
+        }
+        if (inGroup) {
+          groupLogs.push(line);
+        }
+      }
+
+      // Fallback to text matching if group parsing returned no logs
+      if (groupLogs.length === 0) {
+        const stepLogs = lines.filter(
+          (line) => line.includes(`[${stepName}]`) || line.includes(stepName)
+        );
+        groupLogs = stepLogs.length > 0 ? stepLogs : lines;
+      }
+
+      // Take last 20 lines of the failure
+      result[stepName] = groupLogs.slice(-20);
+    }
+
+    return result;
+  } catch (error: any) {
+    console.error("Failed to parse logs from GitHub:", error.message || error);
+    return null;
+  }
+}
+
 export async function handleWorkflowJobEvent(payload: any): Promise<void> {
   const repoId = payload.repository?.id;
   if (!repoId) return;
@@ -257,6 +338,43 @@ export async function handleWorkflowJobEvent(payload: any): Promise<void> {
 
   const socketManager = getSocketManager();
   const jobPayload = payload.workflow_job;
+
+  let errorLogs: Record<string, string[]> | undefined = undefined;
+
+  if (payload.action === "completed" && jobPayload.conclusion === "failure") {
+    // Find all steps that crashed
+    const failedSteps = jobPayload.steps?.filter((step: any) => step.conclusion === "failure") || [];
+
+    if (failedSteps.length > 0) {
+      const failedStepNames = failedSteps.map((s: any) => s.name);
+      console.log(`Failed steps in job ${jobPayload.name}:`, failedStepNames);
+
+      try {
+        const member = await prisma.projectMember.findFirst({
+          where: { projectId: project.id },
+          include: { user: true },
+        });
+
+        const token = member?.user?.githubAccessToken;
+        if (token) {
+          const octokit = getOctokitForUser(token);
+          const [owner, repo] = project.repo_full_name.split("/");
+          const logs = await fetchAndExtractFailedLogs(
+            octokit,
+            owner,
+            repo,
+            jobPayload.id,
+            failedStepNames
+          );
+          if (logs) {
+            errorLogs = logs;
+          }
+        }
+      } catch (err: any) {
+        console.error("Error retrieving user token for fetching failed logs:", err.message || err);
+      }
+    }
+  }
 
   // Persist to MongoDB
   await WorkflowJobModel.findOneAndUpdate(
@@ -279,6 +397,7 @@ export async function handleWorkflowJobEvent(payload: any): Promise<void> {
         startedAt: step.started_at,
         completedAt: step.completed_at,
       })),
+      ...(errorLogs ? { errorLogs } : {}),
     },
     { upsert: true, new: true }
   );
@@ -297,6 +416,7 @@ export async function handleWorkflowJobEvent(payload: any): Promise<void> {
       status: step.status,
       conclusion: step.conclusion,
     })),
+    ...(errorLogs ? { errorLogs } : {}),
   };
 
   socketManager.broadcastJobEvent(repoId, jobData);
@@ -379,8 +499,8 @@ export async function syncLatestWorkflowRuns(
       const durationSeconds =
         run.updated_at && run.run_started_at
           ? Math.round(
-              (new Date(run.updated_at).getTime() - new Date(run.run_started_at).getTime()) / 1000
-            )
+            (new Date(run.updated_at).getTime() - new Date(run.run_started_at).getTime()) / 1000
+          )
           : undefined;
 
       await WorkflowRunModel.findOneAndUpdate(
