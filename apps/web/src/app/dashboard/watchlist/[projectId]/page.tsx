@@ -710,14 +710,37 @@ export default function ProjectDetailPage() {
 
                       {job.steps && job.steps.length > 0 && (
                         <div className="steps-tree" style={{ display: "flex", flexDirection: "column", gap: "0.5rem", paddingLeft: "1.25rem", borderLeft: "2px solid rgba(255,255,255,0.05)" }}>
-                          {job.steps.map((step: any) => (
-                            <div key={step.number} className="step-node" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.85rem" }}>
-                              <span style={{ color: "var(--text-secondary)" }}>
-                                {step.number}. {step.name}
-                              </span>
-                              {renderStatusIndicator(step.status, step.conclusion)}
-                            </div>
-                          ))}
+                          {job.steps.map((step: any) => {
+                            const isFailed = step.conclusion === "failure";
+                            return (
+                              <div key={step.number} style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+                                <div className="step-node" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.85rem" }}>
+                                  <span style={{ color: "var(--text-secondary)" }}>
+                                    {step.number}. {step.name}
+                                  </span>
+                                  {renderStatusIndicator(step.status, step.conclusion)}
+                                </div>
+                                {isFailed && job.errorLogs && job.errorLogs[step.name] && job.errorLogs[step.name].length > 0 && (
+                                  <div
+                                    style={{
+                                      margin: "0.4rem 0 0.4rem 0.5rem",
+                                      padding: "0.5rem",
+                                      background: "rgba(231, 76, 60, 0.05)",
+                                      borderLeft: "2px solid #E74C3C",
+                                      borderRadius: "4px",
+                                      fontFamily: "var(--font-mono)",
+                                      fontSize: "0.75rem",
+                                      color: "#E74C3C",
+                                      whiteSpace: "pre-wrap",
+                                      overflowX: "auto",
+                                    }}
+                                  >
+                                    {job.errorLogs[step.name].join("\n")}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>

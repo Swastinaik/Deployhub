@@ -6,30 +6,36 @@ import cookieParser from 'cookie-parser';
 import { Server as SocketServer } from 'socket.io';
 import { initSocketManager } from './modules/sockets/socket.service.js';
 import { authrouter } from './modules/auth/auth.routes.js';
-import { githubRouter } from './modules/github/github.routes.js';
-import { githubUpdatedRouter } from './modules/github_updated/github.routes.js';
-import { requireAuth } from './modules/auth/auth.middleware.js';
-import { getUserRepositoriesFromDb } from './modules/github_updated/github.controllers.js';
+import { githubUpdatedRouter } from './modules/github/github.routes.js';
+import { handleGithubWebhook } from './modules/github/github.controllers.js';
+import { verifyGitHubSignature } from './modules/github/github.services.js';
 import { asyncHandler } from './lib/asyncHandler.js';
 import { connectMongo } from './lib/mongo.js';
-import { workflowRouter } from './modules/workflowSync/workflow.routes.js';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express4';
 import { metricsTypeDefs } from './modules/metrics/metrics.scheme.js';
 import { metricsResolver } from './modules/metrics/metrics.resolver.js';
 // Load environment variables
 dotenv.config();
+// BigInt JSON serialization patch
+BigInt.prototype.toJSON = function () {
+    return Number(this);
+};
 const app = express();
 // Security Middleware
 app.use(helmet());
-app.use(express.json());
+app.use(express.json({
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    },
+}));
 app.use(cookieParser());
 // CORS configuration - only allow web frontend in development/production
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
     : [
         'http://localhost:3000',
-        'http://127.0.0.1:3000'
+        'http://127.0.0.1:3000',
     ];
 app.use(cors({
     origin: (origin, callback) => {
@@ -48,10 +54,10 @@ connectMongo();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 8000;
 const HOST = process.env.HOST || '0.0.0.0';
 app.use('/api/auth', authrouter);
-app.use('/api/github', githubRouter);
+// app.use('/api/github', githubRouter);
 app.use('/api/github', githubUpdatedRouter);
-app.use('/api/user/repositories', requireAuth, asyncHandler(getUserRepositoriesFromDb));
-app.use('/api/workflow', workflowRouter);
+app.post('/api/webhooks/github', verifyGitHubSignature, asyncHandler(handleGithubWebhook));
+// app.use('/api/workflow', workflowRouter);
 const apolloServer = new ApolloServer({
     typeDefs: metricsTypeDefs,
     resolvers: metricsResolver,

@@ -9,6 +9,7 @@ import {
   handleWorkflowRunEvent,
   handleWorkflowJobEvent,
   syncLatestWorkflowRuns,
+  fetchAndExtractFailedLogs,
 } from "./github.services.js";
 
 export async function handleGithubWebhook(req: Request, res: Response): Promise<void> {
@@ -166,8 +167,6 @@ export async function getRepositoryDetailById(req: AuthedRequest, res: Response)
   }
 }
 
-
-
 export async function getWorkflowRunJobs(req: AuthedRequest, res: Response): Promise<Response> {
   const { projectId, runId } = req.params;
 
@@ -216,6 +215,25 @@ export async function getWorkflowRunJobs(req: AuthedRequest, res: Response): Pro
         const githubJobs = jobsResponse.data.jobs || [];
 
         for (const job of githubJobs) {
+          let errorLogs: Record<string, string[]> | undefined = undefined;
+          if (job.conclusion === "failure" && job.status === "completed") {
+            const failedSteps = job.steps?.filter((step: any) => step.conclusion === "failure") || [];
+            if (failedSteps.length > 0) {
+              const failedStepNames = failedSteps.map((s: any) => s.name);
+              const [owner, repo] = project.repo_full_name.split("/");
+              const logs = await fetchAndExtractFailedLogs(
+                req.octokit,
+                owner,
+                repo,
+                job.id,
+                failedStepNames
+              );
+              if (logs) {
+                errorLogs = logs;
+              }
+            }
+          }
+
           await WorkflowJobModel.findOneAndUpdate(
             { githubJobId: job.id },
             {
@@ -236,6 +254,7 @@ export async function getWorkflowRunJobs(req: AuthedRequest, res: Response): Pro
                 startedAt: step.started_at ? new Date(step.started_at) : undefined,
                 completedAt: step.completed_at ? new Date(step.completed_at) : undefined,
               })),
+              ...(errorLogs ? { errorLogs } : {}),
             },
             { upsert: true, new: true }
           );
@@ -281,6 +300,7 @@ export async function getWorkflowRunJobs(req: AuthedRequest, res: Response): Pro
           startedAt: job.startedAt,
           completedAt: job.completedAt,
           steps: job.steps || [],
+          errorLogs: job.errorLogs || {},
         })),
       },
     });
