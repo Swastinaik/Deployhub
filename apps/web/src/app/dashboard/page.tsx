@@ -13,7 +13,7 @@ interface Repository {
   is_active: boolean;
 }
 
-const GITHUB_APP_INSTALLATION_URL = process.env.GITHUB_APP_INSTALLATION_URL || "https://github.com/apps/deployhub-local/installations/new"; // TODO: Replace with actual App Slug
+const GITHUB_APP_INSTALLATION_URL = process.env.NEXT_PUBLIC_GITHUB_APP_INSTALLATION_URL || "https://github.com/apps/deployhub-local/installations/new"; // TODO: Replace with actual App Slug
 
 export default function DashboardPage() {
   const router = useRouter();
