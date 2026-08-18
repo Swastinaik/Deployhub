@@ -15,6 +15,7 @@ import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express4';
 import { metricsTypeDefs } from './modules/metrics/metrics.scheme.js';
 import { metricsResolver } from './modules/metrics/metrics.resolver.js';
+import { startAlertWorker } from './modules/queues/alert.worker.js';
 // Load environment variables
 dotenv.config();
 
@@ -95,5 +96,6 @@ const io = new SocketServer(server, {
   }
 });
 initSocketManager(io);
+startAlertWorker();
 
 export default server;

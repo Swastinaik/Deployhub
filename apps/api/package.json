@@ -8,6 +8,7 @@
     "build": "prisma generate && tsc",
     "start": "node dist/index.js",
     "lint": "eslint src/**/*.ts",
+    "test": "vitest run",
     "db:generate": "prisma generate",
     "db:migrate": "prisma db push"
   },
@@ -15,18 +16,22 @@
     "@apollo/server": "^5.5.1",
     "@as-integrations/express4": "^1.1.2",
     "@deployhub/shared": "workspace:*",
+    "@getbrevo/brevo": "^2.5.0",
     "@octokit/rest": "^22.0.1",
     "@prisma/client": "^5.22.0",
     "axios": "^1.18.0",
+    "bullmq": "^6.1.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.22.2",
     "graphql": "^16.14.2",
     "helmet": "^7.1.0",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.6.3",
     "octokit": "^5.0.5",
+    "resend": "^6.19.0",
     "socket.io": "^4.8.3",
     "unzipper": "^0.12.3",
     "zod": "^4.4.3"
@@ -38,6 +43,7 @@
     "@types/node": "^20.12.7",
     "prisma": "^5.22.0",
     "tsx": "^4.7.2",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^4.1.10"
   }
 }

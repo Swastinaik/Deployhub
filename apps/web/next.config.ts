@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
       fullUrl: true,
     },
   },
-  allowedDevOrigins: ['barrier-closure-sarcasm.ngrok-free.dev'],
+  //allowedDevOrigins: ['https://confound-flirt-identify.ngrok-free.dev'],
   /* config options here */
   async rewrites() {
     if (!backendUrl) return [];
