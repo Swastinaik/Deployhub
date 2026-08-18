@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { prisma } from "../../db.js";
 import { generateAccessToken, generateRefreshToken } from "../../lib/jwt.js";
-import { getGithubAccessToken, getGithubUser } from "./github.service.js"
+import { getGithubAccessToken, getGithubUser, getGithubUserEmails } from "./github.service.js"
 
 export async function redirectToGithub(
     req: Request,
@@ -36,6 +36,9 @@ export async function githubCallback(
             tokenData.access_token
         );
 
+    // Fetch primary verified email if not present in public profile
+    const userEmail = githubUser.email || (await getGithubUserEmails(tokenData.access_token));
+
     let user = await prisma.user.findUnique({
         where: {
             githubId: String(githubUser.id),
@@ -47,16 +50,18 @@ export async function githubCallback(
             data: {
                 githubId: String(githubUser.id),
                 username: githubUser.login,
+                email: userEmail || null,
                 avatarUrl: githubUser.avatar_url,
                 githubAccessToken: tokenData.access_token,
             },
         });
     } else {
-        await prisma.user.update({
+        user = await prisma.user.update({
             where: {
                 githubId: String(githubUser.id),
             },
             data: {
+                email: userEmail || user.email,
                 githubAccessToken: tokenData.access_token,
             },
         });

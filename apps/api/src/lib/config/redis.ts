@@ -1,10 +1,11 @@
-import { RedisOptions } from 'ioredis';
+import { ConnectionOptions } from 'bullmq';
 
-export const redisConfig: RedisOptions = {
+export const redisConfig: ConnectionOptions = {
     host: process.env.UPSTASH_REDIS_HOST, // e.g., 'smooth-cat-12345.upstash.io'
     port: Number(process.env.UPSTASH_REDIS_PORT) || 6379,
     username: 'default',
     password: process.env.UPSTASH_REDIS_PASSWORD,
+    family: 4,
     tls: {
         rejectUnauthorized: false,
     },

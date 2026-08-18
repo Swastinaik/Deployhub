@@ -6,6 +6,8 @@ import { WorkflowRunModel } from "../../models/workflow-run.model.js";
 import { WorkflowJobModel } from "../../models/workflow-job.model.js";
 import { mapStatus, mapConclusion } from "../../lib/utils.js";
 import { getOctokitForUser } from "../auth/auth.utils.js";
+import { getGithubUserEmails } from "../auth/github.service.js";
+import { enqueueAlert } from "../queues/alert.queue.js";
 
 
 
@@ -244,6 +246,99 @@ export async function handleWorkflowRunEvent(payload: any): Promise<void> {
   };
 
   socketManager.broadcastWorkflowEvent(repoId, workflowData);
+
+  // Trigger alert if workflow run completed with failure
+  if (runPayload.status === "completed" && mapConclusion(runPayload.conclusion) === "failure") {
+    await triggerWorkflowFailureAlert(project, {
+      id: runPayload.id,
+      name: runPayload.name || "Workflow",
+      branch: runPayload.head_branch || "main",
+      conclusion: runPayload.conclusion,
+      html_url: runPayload.html_url,
+      actor: runPayload.actor?.login || "",
+      commitSha: runPayload.head_commit?.id || "",
+      commitMessage: runPayload.head_commit?.message || "",
+    });
+  }
+}
+
+export async function triggerWorkflowFailureAlert(
+  project: { id: string; repo_full_name: string },
+  run: {
+    id: number | string;
+    name?: string;
+    branch?: string;
+    conclusion?: string | null;
+    html_url?: string;
+    actor?: string;
+    commitSha?: string;
+    commitMessage?: string;
+  }
+): Promise<void> {
+  try {
+    const members = await prisma.projectMember.findMany({
+      where: { projectId: project.id },
+      include: { user: true },
+    });
+
+    const recipientEmailSet = new Set<string>();
+
+    for (const member of members) {
+      if (member.user?.email && member.user.email.trim()) {
+        recipientEmailSet.add(member.user.email.trim());
+      } else if (member.user?.githubAccessToken) {
+        // Fallback: If user email is not yet in DB, fetch from GitHub and update DB
+        try {
+          const fetchedEmail = await getGithubUserEmails(member.user.githubAccessToken);
+          if (fetchedEmail) {
+            recipientEmailSet.add(fetchedEmail);
+            await prisma.user.update({
+              where: { id: member.user.id },
+              data: { email: fetchedEmail },
+            });
+          }
+        } catch (fetchErr: any) {
+          console.warn(`[Alert Queue] Could not fetch email for user ${member.user.id}:`, fetchErr.message);
+        }
+      }
+    }
+
+    const recipientEmails = Array.from(recipientEmailSet);
+
+    if (recipientEmails.length === 0) {
+      console.warn(
+        `[Alert Queue] No recipient emails found for project members in project ${project.id} (${project.repo_full_name})`
+      );
+      return;
+    }
+
+    const workflowName = run.name || "Workflow";
+    const branch = run.branch || "main";
+    const runId = run.id;
+    const runUrl =
+      run.html_url || `https://github.com/${project.repo_full_name}/actions/runs/${runId}`;
+
+    for (const email of recipientEmails) {
+      await enqueueAlert({
+        channel: "email",
+        recipient: email,
+        title: `Workflow Failure: ${workflowName}`,
+        message: `Workflow "${workflowName}" for repository ${project.repo_full_name} on branch "${branch}" has failed.`,
+        metadata: {
+          runId,
+          repo: project.repo_full_name,
+          runUrl,
+          branch,
+          actor: run.actor || "",
+          commitSha: run.commitSha || "",
+          commitMessage: run.commitMessage || "",
+          conclusion: run.conclusion || "failure",
+        },
+      });
+    }
+  } catch (err: any) {
+    console.error(`[Alert Queue] Failed to enqueue alert:`, err.message || err);
+  }
 }
 
 // 4. Process Workflow Job Event (Telemetries & Sockets)
@@ -524,6 +619,19 @@ export async function syncLatestWorkflowRuns(
         },
         { upsert: true, new: true }
       );
+
+      if (run.status === "completed" && mapConclusion(run.conclusion) === "failure") {
+        await triggerWorkflowFailureAlert(project, {
+          id: run.id,
+          name: run.name || "Unnamed Workflow",
+          branch: run.head_branch || "main",
+          conclusion: run.conclusion,
+          html_url: run.html_url,
+          actor: run.actor?.login || "unknown",
+          commitSha: run.head_commit?.id || run.head_sha || "",
+          commitMessage: run.head_commit?.message || "No commit message",
+        });
+      }
     }
 
     if (newLatestRunId !== null && (storedLatestRunId === null || newLatestRunId > storedLatestRunId)) {

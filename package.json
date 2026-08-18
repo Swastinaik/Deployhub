@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "pnpm --filter \"*\" dev",
     "build": "pnpm --filter \"*\" build",
-    "lint": "pnpm --filter \"*\" lint"
+    "lint": "pnpm --filter \"*\" lint",
+    "test": "pnpm --filter \"*\" test"
   },
   "devDependencies": {
     "prettier": "^3.2.5",

@@ -39,3 +39,30 @@ export async function getGithubUser(
 
     return response.json();
 }
+
+export async function getGithubUserEmails(
+    accessToken: string
+): Promise<string | null> {
+    try {
+        const response = await fetch(
+            "https://api.github.com/user/emails",
+            {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    Accept: "application/vnd.github+json",
+                },
+            }
+        );
+
+        if (!response.ok) return null;
+
+        const emails: Array<{ email: string; primary: boolean; verified: boolean }> = await response.json();
+        if (!Array.isArray(emails)) return null;
+
+        const primary = emails.find((e) => e.primary && e.verified) || emails.find((e) => e.primary) || emails[0];
+        return primary?.email || null;
+    } catch (err) {
+        console.error("[GitHub Auth] Failed to fetch user emails:", err);
+        return null;
+    }
+}
