@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import authFetch from "@/app/lib/authFetch";
 
@@ -76,6 +76,36 @@ function calculateDuration(start?: string, end?: string) {
     return formatDuration(elapsed);
   }
   return "";
+}
+
+/* ── Step Error Terminal Component ─────────────────────────────────────── */
+function StepErrorLogs({ stepName, logs }: { stepName: string; logs: string[] }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyLogs = () => {
+    navigator.clipboard.writeText(logs.join("\n"));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="step-error-terminal">
+      <div className="step-error-terminal-header">
+        <span>[ERROR_LOGS: {stepName}]</span>
+        <button type="button" className="step-error-copy-btn" onClick={copyLogs}>
+          {copied ? "Copied ✓" : "Copy Logs"}
+        </button>
+      </div>
+      <div className="step-error-terminal-body">
+        {logs.map((line, idx) => (
+          <div key={idx} className="step-error-line">
+            <span className="step-error-line-num">{idx + 1}</span>
+            <span className="step-error-line-text">{line}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function WorkflowRunLogsPage() {
@@ -253,7 +283,7 @@ export default function WorkflowRunLogsPage() {
         </button>
       </header>
 
-      {/* ── Content ── */}
+      {/* ── Content (Full Width) ── */}
       <div className="logs-content" style={{ marginTop: "2rem" }}>
         {error && (
           <div className="error-banner">
@@ -274,17 +304,17 @@ export default function WorkflowRunLogsPage() {
             </span>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", width: "100%" }}>
             {/* Commit message banner */}
             {run?.commitMessage && (
-              <div className="commit-banner" style={{ background: "var(--bg-paper-warm)", border: "1px solid var(--border-medium)", borderRadius: "6px", padding: "1rem", fontSize: "0.9rem" }}>
+              <div className="commit-banner" style={{ background: "var(--bg-paper-warm)", border: "1px solid var(--border-medium)", borderRadius: "6px", padding: "1rem", fontSize: "0.9rem", width: "100%" }}>
                 <span className="commit-banner-label" style={{ color: "var(--accent-vermillion)", fontWeight: "600", marginRight: "0.5rem" }}>commit:</span>
                 {run.commitMessage}
               </div>
             )}
 
-            {/* Jobs Tree list */}
-            <div className="jobs-list-container" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+            {/* Jobs list (Full Width) */}
+            <div className="jobs-list-container" style={{ display: "flex", flexDirection: "column", gap: "1.5rem", width: "100%" }}>
               {jobs.map((job) => {
                 const isOpen = expandedJobs.has(job.githubJobId);
                 const durationText = calculateDuration(job.startedAt, job.completedAt);
@@ -292,12 +322,13 @@ export default function WorkflowRunLogsPage() {
                 return (
                   <div
                     key={job.githubJobId}
-                    className="portal-card"
                     style={{
-                      background: "rgba(255,255,255,0.01)",
+                      width: "100%",
+                      background: "var(--bg-card)",
                       border: "1px solid var(--border-medium)",
-                      borderRadius: "8px",
+                      borderRadius: "6px",
                       overflow: "hidden",
+                      boxShadow: "var(--shadow-card)",
                     }}
                   >
                     {/* Job Card Header */}
@@ -310,7 +341,7 @@ export default function WorkflowRunLogsPage() {
                         display: "flex",
                         justifyContent: "space-between",
                         alignItems: "center",
-                        padding: "1.25rem",
+                        padding: "1.25rem 1.5rem",
                         cursor: "pointer",
                         outline: "none",
                         textAlign: "left",
@@ -327,7 +358,7 @@ export default function WorkflowRunLogsPage() {
                         >
                           ▶
                         </span>
-                        <span style={{ fontWeight: "600", color: "var(--text-primary)", fontSize: "1.1rem" }}>
+                        <span style={{ fontWeight: "600", color: "var(--text-primary)", fontSize: "1.05rem" }}>
                           🛠️ {job.name}
                         </span>
                         {job.runnerName && (
@@ -335,7 +366,8 @@ export default function WorkflowRunLogsPage() {
                             style={{
                               fontSize: "0.75rem",
                               color: "var(--text-secondary)",
-                              background: "rgba(255,255,255,0.05)",
+                              background: "var(--bg-paper-warm)",
+                              border: "1px solid var(--border-hairline)",
                               borderRadius: "4px",
                               padding: "0.1rem 0.4rem",
                             }}
@@ -347,7 +379,7 @@ export default function WorkflowRunLogsPage() {
 
                       <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
                         {durationText && (
-                          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
                             ⏱️ {durationText}
                           </span>
                         )}
@@ -359,9 +391,9 @@ export default function WorkflowRunLogsPage() {
                     {isOpen && (
                       <div
                         style={{
-                          borderTop: "1px solid rgba(255,255,255,0.05)",
-                          padding: "1rem 1.5rem 1.5rem 1.5rem",
-                          background: "rgba(0, 0, 0, 0.1)",
+                          borderTop: "1px solid var(--border-hairline)",
+                          padding: "1.25rem 1.5rem",
+                          background: "var(--bg-paper)",
                         }}
                       >
                         {job.steps && job.steps.length > 0 ? (
@@ -369,9 +401,9 @@ export default function WorkflowRunLogsPage() {
                             style={{
                               display: "flex",
                               flexDirection: "column",
-                              gap: "0.6rem",
+                              gap: "0.75rem",
                               paddingLeft: "1rem",
-                              borderLeft: "2px solid rgba(255,255,255,0.05)",
+                              borderLeft: "2px solid var(--border-medium)",
                             }}
                           >
                             {job.steps.map((step) => {
@@ -390,14 +422,14 @@ export default function WorkflowRunLogsPage() {
                                       width: "100%",
                                     }}
                                   >
-                                    <span style={{ color: "var(--text-secondary)", display: "flex", gap: "0.5rem" }}>
-                                      <span style={{ color: "var(--accent-vermillion)", opacity: "0.7" }}>{step.number}.</span>
+                                    <span style={{ color: isFailed ? "var(--accent-vermillion)" : "var(--text-primary)", display: "flex", gap: "0.5rem", fontWeight: isFailed ? "600" : "500" }}>
+                                      <span style={{ color: "var(--accent-brass)" }}>{step.number}.</span>
                                       {step.name}
                                     </span>
 
                                     <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
                                       {stepDuration && (
-                                        <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
+                                        <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
                                           {stepDuration}
                                         </span>
                                       )}
@@ -405,23 +437,12 @@ export default function WorkflowRunLogsPage() {
                                     </div>
                                   </div>
 
+                                  {/* Error Log Terminal when Step Fails */}
                                   {isFailed && job.errorLogs && job.errorLogs[step.name] && job.errorLogs[step.name].length > 0 && (
-                                    <div
-                                      style={{
-                                        margin: "0.5rem 0 0.5rem 1.5rem",
-                                        padding: "0.75rem",
-                                        background: "rgba(231, 76, 60, 0.05)",
-                                        borderLeft: "3px solid #E74C3C",
-                                        borderRadius: "4px",
-                                        fontFamily: "var(--font-mono)",
-                                        fontSize: "0.8rem",
-                                        color: "#E74C3C",
-                                        whiteSpace: "pre-wrap",
-                                        overflowX: "auto",
-                                      }}
-                                    >
-                                      {job.errorLogs[step.name].join("\n")}
-                                    </div>
+                                    <StepErrorLogs
+                                      stepName={step.name}
+                                      logs={job.errorLogs[step.name]}
+                                    />
                                   )}
                                 </div>
                               );

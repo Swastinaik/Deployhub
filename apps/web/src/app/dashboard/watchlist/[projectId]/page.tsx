@@ -128,10 +128,8 @@ export default function ProjectDetailPage() {
           const active = result.data.recentWorkflowRuns.filter(
             (run: WorkflowRun) => run.status === "in_progress" || run.status === "queued" || run.status === "requested"
           );
-          setActiveRuns(active);
-
-          // Select the first active run as default selected
           if (active.length > 0) {
+            setActiveRuns(active);
             setSelectedActiveRunId(active[0].githubRunId);
           }
         } else {
@@ -205,7 +203,7 @@ export default function ProjectDetailPage() {
     // Listen for live build framework updates
     socket.on("build_framework_update", (workflow: any) => {
       console.log("[Socket] Received build_framework_update:", workflow);
-      
+
       const isActive = workflow.status === "in_progress" || workflow.status === "queued" || workflow.status === "requested";
 
       if (isActive) {
@@ -270,19 +268,19 @@ export default function ProjectDetailPage() {
     // Listen for live job updates
     socket.on("build_job_update", (jobData: any) => {
       console.log("[Socket] Received build_job_update:", jobData);
-      
+
       setLiveJobs((prev) => {
         const runId = jobData.runId;
         const currentJobs = prev[runId] || [];
         const exists = currentJobs.some((j) => j.jobId === jobData.jobId);
-        
+
         let updatedJobs;
         if (exists) {
           updatedJobs = currentJobs.map((j) => (j.jobId === jobData.jobId ? jobData : j));
         } else {
           updatedJobs = [...currentJobs, jobData];
         }
-        
+
         return {
           ...prev,
           [runId]: updatedJobs
@@ -375,14 +373,14 @@ export default function ProjectDetailPage() {
         );
       }
       return (
-        <span className="status-badge neutral" style={{ color: "var(--text-secondary)", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+        <span className="status-badge neutral" style={{ color: "#94A3B8", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
           <span>⊘</span> {conclusion?.toUpperCase() || "COMPLETED"}
         </span>
       );
     }
 
     return (
-      <span className="status-badge neutral" style={{ color: "var(--text-secondary)" }}>
+      <span className="status-badge neutral" style={{ color: "#94A3B8" }}>
         {status.toUpperCase()}
       </span>
     );
@@ -416,11 +414,13 @@ export default function ProjectDetailPage() {
               <div className="terminal-header" style={{ marginBottom: "1rem" }}>
                 <div className="skeleton-line short" style={{ height: "1.2rem", width: "150px" }} />
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                <div className="active-build-card skeleton-card">
-                  <div className="skeleton-line long" style={{ height: "1.2rem" }} />
-                  <div className="skeleton-line medium" style={{ height: "1rem", margin: "0.5rem 0" }} />
-                  <div className="skeleton-line short" />
+              <div className="active-builds-window">
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  <div className="active-build-card skeleton-card">
+                    <div className="skeleton-line long" style={{ height: "1.2rem" }} />
+                    <div className="skeleton-line medium" style={{ height: "1rem", margin: "0.5rem 0" }} />
+                    <div className="skeleton-line short" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -429,7 +429,7 @@ export default function ProjectDetailPage() {
               <div className="terminal-header" style={{ marginBottom: "1rem" }}>
                 <div className="skeleton-line short" style={{ height: "1.2rem", width: "150px" }} />
               </div>
-              <div className="terminal-window" style={{ height: "400px" }}>
+              <div className="terminal-window" style={{ height: "450px" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", width: "100%" }}>
                   <div className="skeleton-line long" style={{ backgroundColor: "rgba(255, 255, 255, 0.08)" }} />
                   <div className="skeleton-line medium" style={{ backgroundColor: "rgba(255, 255, 255, 0.08)" }} />
@@ -597,67 +597,94 @@ export default function ProjectDetailPage() {
         <div className="active-telemetry-grid">
           {/* Active Builds Selection List */}
           <div className="portal-card telemetry-card">
-            <div className="section-title">Active Builds</div>
-            {activeRuns.length === 0 ? (
-              <div className="empty-active-builds">No active deployments</div>
-            ) : (
-              <div className="active-builds-scroll-container">
-                {activeRuns.map((run) => {
-                  const isSelected = selectedActiveRunId === run.githubRunId;
-                  const started = new Date(run.startedAt).getTime();
-                  const durationSec = run.status === "in_progress"
-                    ? Math.max(0, Math.floor((Date.now() - started) / 1000))
-                    : run.durationSeconds || 0;
+            <div className="terminal-header" style={{ marginBottom: "1rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                <h3 className="terminal-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span>[ACTIVE_BUILDS]</span>
+                  <span
+                    className="badge"
+                    style={{
+                      fontSize: "0.65rem",
+                      padding: "0.15rem 0.5rem",
+                      backgroundColor: activeRuns.length > 0 ? "var(--accent-brass-dim)" : "var(--bg-paper-warm)",
+                      color: activeRuns.length > 0 ? "var(--accent-brass)" : "var(--text-secondary)",
+                      border: `1px solid ${activeRuns.length > 0 ? "var(--accent-brass)" : "var(--border-medium)"}`,
+                    }}
+                  >
+                    {activeRuns.length} RUNNING
+                  </span>
+                </h3>
+                <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", display: "flex", gap: "0.75rem" }}>
+                  <span>Select a build to inspect live telemetry</span>
+                </div>
+              </div>
+            </div>
 
-                  return (
-                    <div
-                      key={run.githubRunId}
-                      className={`active-build-card active-build-card-clickable ${isSelected ? "selected-active-build-card" : ""}`}
-                      onClick={() => setSelectedActiveRunId(run.githubRunId)}
-                    >
-                      <div className="active-build-header">
-                        <div>
-                          <span className="active-build-name">{run.workflowName}</span>
-                          <span className="active-build-number">#{run.githubRunId}</span>
-                        </div>
-                        <span className={`status-badge ${run.status}`}>
-                          {run.status === "in_progress" && <span className="pulse-dot" />}
-                          {run.status.toUpperCase()}
-                        </span>
-                      </div>
+            <div className="active-builds-window">
+              {activeRuns.length === 0 ? (
+                <div className="terminal-empty" style={{ minHeight: "350px", border: "1px dashed var(--border-medium)", borderRadius: "4px", padding: "2rem" }}>
+                  <span className="terminal-cursor">&gt;_</span>
+                  <span>No active deployments running</span>
+                </div>
+              ) : (
+                <div className="active-builds-scroll-container">
+                  {activeRuns.map((run) => {
+                    const isSelected = selectedActiveRunId === run.githubRunId;
+                    const started = new Date(run.startedAt).getTime();
+                    const durationSec = run.status === "in_progress"
+                      ? Math.max(0, Math.floor((Date.now() - started) / 1000))
+                      : run.durationSeconds || 0;
 
-                      <div className="active-build-details">
-                        <div className="detail-row">
-                          <span className="metadata-label">Branch</span>
-                          <code>{run.branch}</code>
-                        </div>
-                        <div className="detail-row">
-                          <span className="metadata-label">Started</span>
-                          <span>{formatDate(run.startedAt)}</span>
-                        </div>
-                        <div className="detail-row">
-                          <span className="metadata-label">Duration</span>
-                          <span style={{ fontFamily: "var(--font-mono)", fontWeight: "600" }}>
-                            {formatDuration(durationSec)}
+                    return (
+                      <div
+                        key={run.githubRunId}
+                        className={`active-build-card active-build-card-clickable ${isSelected ? "selected-active-build-card" : ""}`}
+                        onClick={() => setSelectedActiveRunId(run.githubRunId)}
+                      >
+                        <div className="active-build-header">
+                          <div>
+                            <span className="active-build-name">{run.workflowName}</span>
+                            <span className="active-build-number">#{run.githubRunId}</span>
+                          </div>
+                          <span className={`status-badge ${run.status}`}>
+                            {run.status === "in_progress" && <span className="pulse-dot" />}
+                            {run.status.toUpperCase()}
                           </span>
                         </div>
-                        <div className="detail-row">
-                          <span className="metadata-label">Actor</span>
-                          <span>{run.actor}</span>
+
+                        <div className="active-build-details">
+                          <div className="detail-row">
+                            <span className="metadata-label">Branch</span>
+                            <code>{run.branch}</code>
+                          </div>
+                          <div className="detail-row">
+                            <span className="metadata-label">Started</span>
+                            <span>{formatDate(run.startedAt)}</span>
+                          </div>
+                          <div className="detail-row">
+                            <span className="metadata-label">Duration</span>
+                            <span style={{ fontFamily: "var(--font-mono)", fontWeight: "600" }}>
+                              {formatDuration(durationSec)}
+                            </span>
+                          </div>
+                          <div className="detail-row">
+                            <span className="metadata-label">Actor</span>
+                            <span>{run.actor}</span>
+                          </div>
+                        </div>
+
+                        <div className="active-build-commit">
+                          <span className="commit-sha-badge">{run.commitSha.substring(0, 7)}</span>
+                          <span className="commit-msg-text" title={run.commitMessage}>
+                            {run.commitMessage}
+                          </span>
                         </div>
                       </div>
-
-                      <div className="active-build-commit">
-                        <span className="commit-sha-badge">{run.commitSha.substring(0, 7)}</span>
-                        <span className="commit-msg-text" title={run.commitMessage}>
-                          {run.commitMessage}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Selected Active Build Live Jobs and Steps */}
@@ -668,7 +695,7 @@ export default function ProjectDetailPage() {
                   <span>[LIVE_JOBS_AND_STEPS]</span>
                   {selectedActiveRun ? `(Run #${selectedActiveRun.githubRunId})` : ""}
                 </h3>
-                {selectedActiveRun && (
+                {selectedActiveRun ? (
                   <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", display: "flex", gap: "0.75rem" }}>
                     <span>
                       branch: <code>{selectedActiveRun.branch}</code>
@@ -676,6 +703,10 @@ export default function ProjectDetailPage() {
                     <span>
                       status: <code>{selectedActiveRun.status.toUpperCase()}</code>
                     </span>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", display: "flex", gap: "0.75rem" }}>
+                    <span>Live step telemetry feed</span>
                   </div>
                 )}
               </div>
@@ -698,25 +729,67 @@ export default function ProjectDetailPage() {
                   <span>Waiting for live job status from GitHub...</span>
                 </div>
               ) : (
-                <div className="jobs-list" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                <div className="live-jobs-list" style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                   {liveJobs[selectedActiveRunId].map((job: any) => (
-                    <div key={job.jobId} className="job-node" style={{ display: "flex", flexDirection: "column", gap: "0.75rem", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-medium)", borderRadius: "6px", padding: "1rem" }}>
-                      <div className="job-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: "0.5rem" }}>
-                        <span style={{ fontWeight: "600", fontSize: "0.95rem", color: "var(--text-primary)" }}>
+                    <div
+                      key={job.jobId}
+                      className="live-job-node"
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.75rem",
+                        background: "rgba(255, 255, 255, 0.03)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                        borderRadius: "6px",
+                        padding: "1rem",
+                      }}
+                    >
+                      <div
+                        className="live-job-header"
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+                          paddingBottom: "0.6rem",
+                        }}
+                      >
+                        <span style={{ fontWeight: "600", fontSize: "0.95rem", color: "#F8FAFC", display: "flex", alignItems: "center", gap: "0.4rem" }}>
                           🛠️ {job.jobName}
                         </span>
                         {renderStatusIndicator(job.status, job.conclusion)}
                       </div>
 
                       {job.steps && job.steps.length > 0 && (
-                        <div className="steps-tree" style={{ display: "flex", flexDirection: "column", gap: "0.5rem", paddingLeft: "1.25rem", borderLeft: "2px solid rgba(255,255,255,0.05)" }}>
+                        <div
+                          className="live-steps-tree"
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "0.5rem",
+                            paddingLeft: "1rem",
+                            borderLeft: "2px solid rgba(255, 255, 255, 0.1)",
+                          }}
+                        >
                           {job.steps.map((step: any) => {
                             const isFailed = step.conclusion === "failure";
                             return (
                               <div key={step.number} style={{ display: "flex", flexDirection: "column", width: "100%" }}>
-                                <div className="step-node" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.85rem" }}>
-                                  <span style={{ color: "var(--text-secondary)" }}>
-                                    {step.number}. {step.name}
+                                <div
+                                  className="live-step-node"
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    fontSize: "0.85rem",
+                                    padding: "0.2rem 0",
+                                  }}
+                                >
+                                  <span style={{ color: "#E2E8F0", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                                    <span style={{ color: "var(--accent-brass)", fontWeight: "600", opacity: "0.9" }}>
+                                      {step.number}.
+                                    </span>
+                                    {step.name}
                                   </span>
                                   {renderStatusIndicator(step.status, step.conclusion)}
                                 </div>
@@ -724,13 +797,13 @@ export default function ProjectDetailPage() {
                                   <div
                                     style={{
                                       margin: "0.4rem 0 0.4rem 0.5rem",
-                                      padding: "0.5rem",
-                                      background: "rgba(231, 76, 60, 0.05)",
-                                      borderLeft: "2px solid #E74C3C",
+                                      padding: "0.6rem 0.75rem",
+                                      background: "rgba(231, 76, 60, 0.12)",
+                                      borderLeft: "3px solid #E74C3C",
                                       borderRadius: "4px",
                                       fontFamily: "var(--font-mono)",
                                       fontSize: "0.75rem",
-                                      color: "#E74C3C",
+                                      color: "#FCA5A5",
                                       whiteSpace: "pre-wrap",
                                       overflowX: "auto",
                                     }}
