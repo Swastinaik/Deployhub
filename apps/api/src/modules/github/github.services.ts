@@ -8,6 +8,7 @@ import { mapStatus, mapConclusion } from "../../lib/utils.js";
 import { getOctokitForUser } from "../auth/auth.utils.js";
 import { getGithubUserEmails } from "../auth/github.service.js";
 import { enqueueAlert } from "../queues/alert.queue.js";
+import { getCache, setCache, deleteCache, deletePattern } from "../../lib/cache.js";
 
 
 
@@ -157,6 +158,12 @@ export async function handleInstallationEvent(payload: any): Promise<void> {
       where: { id: Number(installationId) },
     });
   }
+
+  // Invalidate project list cache
+  if (installerId) {
+    await deleteCache(`user:projects:${installerId}`);
+  }
+  await deletePattern("user:projects:*");
 }
 
 // 2. Process Installation Repositories Event
@@ -188,8 +195,15 @@ export async function handleInstallationRepositoriesEvent(payload: any): Promise
         where: { github_repo_id: repoId },
         data: { is_active: false },
       });
+      await deleteCache(`github:repo:${repoId}`);
     }
   }
+
+  // Invalidate project list cache
+  if (installerId) {
+    await deleteCache(`user:projects:${installerId}`);
+  }
+  await deletePattern("user:projects:*");
 }
 
 // 3. Process Workflow Run Event (Telemetries & Sockets)
@@ -229,6 +243,13 @@ export async function handleWorkflowRunEvent(payload: any): Promise<void> {
     },
     { upsert: true, new: true }
   );
+
+  // Invalidate recent runs, metrics, and jobs cache for this project and run
+  await deleteCache([
+    `project:recent_runs:${project.id}`,
+    `metrics:project:${project.id}`,
+    `project:${project.id}:run:${runPayload.id}:jobs`,
+  ]);
 
   const workflowData = {
     eventType: "workflow_run",
@@ -296,6 +317,7 @@ export async function triggerWorkflowFailureAlert(
               where: { id: member.user.id },
               data: { email: fetchedEmail },
             });
+            await deleteCache(`user:profile:${member.user.id}`);
           }
         } catch (fetchErr: any) {
           console.warn(`[Alert Queue] Could not fetch email for user ${member.user.id}:`, fetchErr.message);
@@ -497,6 +519,9 @@ export async function handleWorkflowJobEvent(payload: any): Promise<void> {
     { upsert: true, new: true }
   );
 
+  // Invalidate jobs cache for this run
+  await deleteCache(`project:${project.id}:run:${jobPayload.run_id}:jobs`);
+
   const jobData = {
     eventType: "workflow_job",
     action: payload.action,
@@ -642,6 +667,12 @@ export async function syncLatestWorkflowRuns(
         },
       });
     }
+
+    // Invalidate recent runs and metrics cache for this project
+    await deleteCache([
+      `project:recent_runs:${projectId}`,
+      `metrics:project:${projectId}`,
+    ]);
 
     console.log(
       `Incremental sync complete for project ${projectId}: ${newRuns.length} new run(s) saved. Latest run ID: ${newLatestRunId}`

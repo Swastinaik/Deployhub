@@ -3,6 +3,7 @@ import { prisma } from "../../db.js";
 import { AuthedRequest } from "../auth/auth.middleware.js";
 import { WorkflowRunModel } from "../../models/workflow-run.model.js";
 import { WorkflowJobModel } from "../../models/workflow-job.model.js";
+import { getCache, setCache } from "../../lib/cache.js";
 import {
   handleInstallationEvent,
   handleInstallationRepositoriesEvent,
@@ -68,6 +69,12 @@ export async function verifyInstallation(req: Request, res: Response): Promise<R
 
 export async function getUserRepositoriesFromDb(req: AuthedRequest, res: Response): Promise<Response> {
   try {
+    const cacheKey = `user:projects:${req.userId}`;
+    const cachedProjects = await getCache<any[]>(cacheKey);
+    if (cachedProjects) {
+      return res.status(200).json({ status: "success", data: cachedProjects });
+    }
+
     const projects = await prisma.project.findMany({
       where: {
         projectMembers: {
@@ -80,6 +87,8 @@ export async function getUserRepositoriesFromDb(req: AuthedRequest, res: Respons
         id: "desc",
       },
     });
+
+    await setCache(cacheKey, projects, 1800);
 
     return res.status(200).json({ status: "success", data: projects });
   } catch (err: any) {
@@ -104,35 +113,46 @@ export async function getRepositoryDetailById(req: AuthedRequest, res: Response)
       return res.status(401).json({ status: "error", message: "GitHub client not initialized" });
     }
 
-    let repoResponse;
-    try {
-      repoResponse = await req.octokit.request("GET /repositories/{id}", {
-        id: Number(project.github_repo_id),
-      });
-    } catch (gitErr: any) {
-      console.error(`[GitHub Sync] Error fetching repo details from GitHub:`, gitErr.message);
-      return res.status(404).json({
-        status: "error",
-        message: "Repository not found on GitHub or access denied",
-      });
+    const repoCacheKey = `github:repo:${project.github_repo_id}`;
+    let repoDetails = await getCache<any>(repoCacheKey);
+
+    if (!repoDetails) {
+      try {
+        const repoResponse = await req.octokit.request("GET /repositories/{id}", {
+          id: Number(project.github_repo_id),
+        });
+        repoDetails = repoResponse.data;
+        await setCache(repoCacheKey, repoDetails, 86400);
+      } catch (gitErr: any) {
+        console.error(`[GitHub Sync] Error fetching repo details from GitHub:`, gitErr.message);
+        return res.status(404).json({
+          status: "error",
+          message: "Repository not found on GitHub or access denied",
+        });
+      }
     }
 
-    const repoDetails = repoResponse.data;
     const owner = repoDetails.owner.login;
     const repoName = repoDetails.name;
 
-    // Sync latest actions/workflows from GitHub using the new service function
-    try {
-      await syncLatestWorkflowRuns(req.octokit, project.id, owner, repoName);
-    } catch (syncErr: any) {
-      console.error(`[GitHub Sync] Incremental workflow run sync failed:`, syncErr.message);
-    }
+    // Fetch the top 5 runs from cache or sync from GitHub & query MongoDB
+    const recentRunsCacheKey = `project:recent_runs:${project.id}`;
+    let recentRuns = await getCache<any[]>(recentRunsCacheKey);
 
-    // Fetch the top 5 runs from MongoDB
-    const recentRuns = await WorkflowRunModel.find({ projectId: project.id })
-      .sort({ startedAt: -1 })
-      .limit(5)
-      .lean();
+    if (!recentRuns) {
+      // If cache is empty or invalidated, perform an incremental sync from GitHub
+      try {
+        await syncLatestWorkflowRuns(req.octokit, project.id, owner, repoName);
+      } catch (syncErr: any) {
+        console.error(`[GitHub Sync] Incremental workflow run sync failed:`, syncErr.message);
+      }
+
+      recentRuns = await WorkflowRunModel.find({ projectId: project.id })
+        .sort({ startedAt: -1 })
+        .limit(5)
+        .lean();
+      await setCache(recentRunsCacheKey, recentRuns, 900);
+    }
 
     return res.status(200).json({
       status: "success",
@@ -171,6 +191,12 @@ export async function getWorkflowRunJobs(req: AuthedRequest, res: Response): Pro
   const { projectId, runId } = req.params;
 
   try {
+    const cacheKey = `project:${projectId}:run:${runId}:jobs`;
+    const cachedData = await getCache<any>(cacheKey);
+    if (cachedData) {
+      return res.status(200).json({ status: "success", data: cachedData });
+    }
+
     // 1. Check if run exists
     const run = await WorkflowRunModel.findOne({
       projectId,
@@ -273,36 +299,42 @@ export async function getWorkflowRunJobs(req: AuthedRequest, res: Response): Pro
       }
     }
 
+    const responseData = {
+      run: {
+        githubRunId: run.githubRunId,
+        workflowName: run.workflowName,
+        branch: run.branch,
+        commitSha: run.commitSha,
+        commitMessage: run.commitMessage,
+        actor: run.actor,
+        startedAt: run.startedAt,
+        completedAt: run.completedAt,
+        durationSeconds: run.duration || 0,
+        status: run.status,
+        conclusion: run.conclusion,
+      },
+      jobs: jobs.map((job) => ({
+        githubJobId: job.githubJobId,
+        githubRunId: job.githubRunId,
+        projectId: job.projectId,
+        name: job.name,
+        status: job.status,
+        conclusion: job.conclusion,
+        runnerName: job.runnerName,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        steps: job.steps || [],
+        errorLogs: job.errorLogs || {},
+      })),
+    };
+
+    // Cache completed runs for 7 days (static/immutable), active runs for 15 seconds
+    const ttl = run.status === "completed" ? 604800 : 15;
+    await setCache(cacheKey, responseData, ttl);
+
     return res.status(200).json({
       status: "success",
-      data: {
-        run: {
-          githubRunId: run.githubRunId,
-          workflowName: run.workflowName,
-          branch: run.branch,
-          commitSha: run.commitSha,
-          commitMessage: run.commitMessage,
-          actor: run.actor,
-          startedAt: run.startedAt,
-          completedAt: run.completedAt,
-          durationSeconds: run.duration || 0,
-          status: run.status,
-          conclusion: run.conclusion,
-        },
-        jobs: jobs.map((job) => ({
-          githubJobId: job.githubJobId,
-          githubRunId: job.githubRunId,
-          projectId: job.projectId,
-          name: job.name,
-          status: job.status,
-          conclusion: job.conclusion,
-          runnerName: job.runnerName,
-          startedAt: job.startedAt,
-          completedAt: job.completedAt,
-          steps: job.steps || [],
-          errorLogs: job.errorLogs || {},
-        })),
-      },
+      data: responseData,
     });
   } catch (err: any) {
     console.error(`[Workflow Run Jobs] Error loading jobs:`, err.message);

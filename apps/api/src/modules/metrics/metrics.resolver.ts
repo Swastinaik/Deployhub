@@ -1,4 +1,4 @@
-import { MetricsService } from "./metrics.service.js";
+import { MetricsService, BranchMetric } from "./metrics.service.js";
 
 const metricsService = new MetricsService();
 
@@ -19,7 +19,7 @@ export const metricsResolver = {
             activeRuns: data.activeRuns,
             successRate: data.successRate,
             averageDuration: data.averageDuration,
-            topBranches: data.topBranches.map(tb => ({
+            topBranches: data.topBranches.map((tb: BranchMetric) => ({
                branch: tb.name,
                count: tb.count
             }))

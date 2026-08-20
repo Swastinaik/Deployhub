@@ -1,11 +1,34 @@
 import { WorkflowRunModel } from "../../models/workflow-run.model.js";
-
+import { getCache, setCache } from "../../lib/cache.js";
 
 // TODO(security): Ensure authentication and authorization checks (verifying that the user
 // requesting metrics has access to the specified projectId) are performed at the resolver/controller level.
 
+export interface BranchMetric {
+   name: string;
+   count: number;
+}
+
+export interface ProjectMetricsResult {
+   totalRuns: number;
+   successfulRuns: number;
+   failedRuns: number;
+   cancelledRuns: number;
+   activeRuns: number;
+   successRate: number;
+   failureRate: number;
+   averageDuration: number;
+   topBranches: BranchMetric[];
+}
+
 export class MetricsService {
-   async getProjectMetrics(projectId: string) {
+   async getProjectMetrics(projectId: string): Promise<ProjectMetricsResult> {
+      const cacheKey = `metrics:project:${projectId}`;
+      const cachedMetrics = await getCache<ProjectMetricsResult>(cacheKey);
+      if (cachedMetrics) {
+         return cachedMetrics;
+      }
+
       const totalRuns = await WorkflowRunModel.countDocuments({
          projectId
       });
@@ -92,9 +115,7 @@ export class MetricsService {
       const workflowRuns = await WorkflowRunModel.find({ projectId }, "githubRunId");
       const workflowIds = workflowRuns.map(run => run.githubRunId);
 
-
-
-      return {
+      const metricsResult = {
          totalRuns,
          successfulRuns,
          failedRuns,
@@ -105,5 +126,9 @@ export class MetricsService {
          averageDuration,
          topBranches
       };
+
+      await setCache(cacheKey, metricsResult, 3600);
+
+      return metricsResult;
    }
 }
